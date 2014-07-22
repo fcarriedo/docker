@@ -18,6 +18,12 @@ func TestHumanSize(t *testing.T) {
 	if size != expect {
 		t.Errorf("1024 -> expected '%s', got '%s'", expect, size)
 	}
+
+	size = strings.Trim(HumanSize(2000000), " \t")
+	expect = "2 MB"
+	if size != expect {
+		t.Errorf("2000000 -> expected '%s', got '%s'", expect, size)
+	}
 }
 
 func TestFromHumanSize(t *testing.T) {

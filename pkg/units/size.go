@@ -10,10 +10,9 @@ import (
 // HumanSize returns a human-readable approximation of a size
 // using SI standard (eg. "44kB", "17MB")
 func HumanSize(size int64) string {
-	i := 0
-	var sizef float64
-	sizef = float64(size)
 	units := []string{"B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"}
+	i := 0
+	sizef := float64(size)
 	for sizef >= 1000.0 {
 		sizef = sizef / 1000.0
 		i++
@@ -42,15 +41,16 @@ func FromHumanSize(size string) (int64, error) {
 
 	unit := strings.ToLower(matches[2])
 
-	if unit == "k" {
+	switch unit {
+	case "k":
 		theSize *= 1000
-	} else if unit == "m" {
+	case "m":
 		theSize *= 1000 * 1000
-	} else if unit == "g" {
+	case "g":
 		theSize *= 1000 * 1000 * 1000
-	} else if unit == "t" {
+	case "t":
 		theSize *= 1000 * 1000 * 1000 * 1000
-	} else if unit == "p" {
+	case "p":
 		theSize *= 1000 * 1000 * 1000 * 1000 * 1000
 	}
 
@@ -80,13 +80,14 @@ func RAMInBytes(size string) (bytes int64, err error) {
 
 	unit := strings.ToLower(matches[2])
 
-	if unit == "k" {
+	switch unit {
+	case "k":
 		memLimit *= 1024
-	} else if unit == "m" {
+	case "m":
 		memLimit *= 1024 * 1024
-	} else if unit == "g" {
+	case "g":
 		memLimit *= 1024 * 1024 * 1024
-	} else if unit == "t" {
+	case "t":
 		memLimit *= 1024 * 1024 * 1024 * 1024
 	}
 
