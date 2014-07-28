@@ -16,9 +16,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/dotcloud/docker/pkg/system"
-	"github.com/dotcloud/docker/utils"
-	"github.com/dotcloud/docker/vendor/src/code.google.com/p/go/src/pkg/archive/tar"
+	"github.com/docker/docker/pkg/system"
+	"github.com/docker/docker/utils"
+	"github.com/docker/docker/vendor/src/code.google.com/p/go/src/pkg/archive/tar"
 )
 
 type (
@@ -356,6 +356,10 @@ func TarWithOptions(srcPath string, options *TarOptions) (io.ReadCloser, error) 
 						return err
 					}
 					if matched {
+						if filepath.Clean(relFilePath) == "." {
+							utils.Errorf("Can't exclude whole path, excluding pattern: %s", exclude)
+							continue
+						}
 						utils.Debugf("Skipping excluded path: %s", relFilePath)
 						if f.IsDir() {
 							return filepath.SkipDir

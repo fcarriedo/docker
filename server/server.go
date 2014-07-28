@@ -45,20 +45,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dotcloud/docker/archive"
-	"github.com/dotcloud/docker/daemon"
-	"github.com/dotcloud/docker/daemonconfig"
-	"github.com/dotcloud/docker/dockerversion"
-	"github.com/dotcloud/docker/engine"
-	"github.com/dotcloud/docker/graph"
-	"github.com/dotcloud/docker/image"
-	"github.com/dotcloud/docker/pkg/graphdb"
-	"github.com/dotcloud/docker/pkg/signal"
-	"github.com/dotcloud/docker/pkg/tailfile"
-	"github.com/dotcloud/docker/registry"
-	"github.com/dotcloud/docker/runconfig"
-	"github.com/dotcloud/docker/utils"
-	"github.com/dotcloud/docker/utils/filters"
+	"github.com/docker/docker/archive"
+	"github.com/docker/docker/daemon"
+	"github.com/docker/docker/daemonconfig"
+	"github.com/docker/docker/dockerversion"
+	"github.com/docker/docker/engine"
+	"github.com/docker/docker/graph"
+	"github.com/docker/docker/image"
+	"github.com/docker/docker/pkg/graphdb"
+	"github.com/docker/docker/pkg/signal"
+	"github.com/docker/docker/pkg/tailfile"
+	"github.com/docker/docker/registry"
+	"github.com/docker/docker/runconfig"
+	"github.com/docker/docker/utils"
+	"github.com/docker/docker/utils/filters"
 )
 
 func (srv *Server) handlerWrap(h engine.Handler) engine.Handler {
@@ -94,7 +94,11 @@ func InitServer(job *engine.Job) engine.Status {
 	}
 	job.Logf("Setting up signal traps")
 	c := make(chan os.Signal, 1)
-	gosignal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
+	signals := []os.Signal{os.Interrupt, syscall.SIGTERM}
+	if os.Getenv("DEBUG") == "" {
+		signals = append(signals, syscall.SIGQUIT)
+	}
+	gosignal.Notify(c, signals...)
 	go func() {
 		interruptCount := uint32(0)
 		for sig := range c {
@@ -229,10 +233,10 @@ func (srv *Server) ContainerKill(job *engine.Job) engine.Status {
 		if err != nil {
 			// The signal is not a number, treat it as a string (either like "KILL" or like "SIGKILL")
 			sig = uint64(signal.SignalMap[strings.TrimPrefix(job.Args[1], "SIG")])
-			if sig == 0 {
-				return job.Errorf("Invalid signal: %s", job.Args[1])
-			}
+		}
 
+		if sig == 0 {
+			return job.Errorf("Invalid signal: %s", job.Args[1])
 		}
 	}
 
@@ -1697,8 +1701,6 @@ func (srv *Server) ImageImport(job *engine.Job) engine.Status {
 			u.Path = ""
 		}
 		job.Stdout.Write(sf.FormatStatus("", "Downloading from %s", u))
-		// Download with curl (pretty progress bar)
-		// If curl is not available, fallback to http.Get()
 		resp, err = utils.Download(u.String())
 		if err != nil {
 			return job.Error(err)

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"archive/tar"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dotcloud/docker/archive"
+	"github.com/docker/docker/archive"
 )
 
 func TestBuildCacheADD(t *testing.T) {
@@ -1577,6 +1579,29 @@ func TestDockerignoringDockerfile(t *testing.T) {
 	logDone("build - test .dockerignore of Dockerfile")
 }
 
+func TestDockerignoringWholeDir(t *testing.T) {
+	name := "testbuilddockerignorewholedir"
+	defer deleteImages(name)
+	dockerfile := `
+        FROM busybox
+		COPY . /
+		RUN [[ ! -e /.gitignore ]]
+		RUN [[ -f /Makefile ]]`
+	ctx, err := fakeContext(dockerfile, map[string]string{
+		"Dockerfile":    "FROM scratch",
+		"Makefile":      "all:",
+		".dockerignore": ".*\n",
+	})
+	defer ctx.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = buildImageFromContext(name, ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	logDone("build - test .dockerignore whole dir with .*")
+}
+
 func TestBuildLineBreak(t *testing.T) {
 	name := "testbuildlinebreak"
 	defer deleteImages(name)
@@ -1747,33 +1772,83 @@ RUN [ "$(cat /testfile)" = 'test!' ]`
 func TestBuildAddTar(t *testing.T) {
 	name := "testbuildaddtar"
 	defer deleteImages(name)
-	checkOutput := func(out string) {
-		n := -1
-		x := ""
-		for i, line := range strings.Split(out, "\n") {
-			if strings.HasPrefix(line, "Step 2") {
-				n = i + 2
-				x = line[strings.Index(line, "cat ")+4:]
-			}
-			if i == n {
-				if line != "Hi" {
-					t.Fatalf("Could not find contents of %s (expected 'Hi' got '%s'", x, line)
-				}
-				n = -2
-			}
+
+	ctx := func() *FakeContext {
+		dockerfile := `
+FROM busybox
+ADD test.tar /
+RUN cat /test/foo | grep Hi
+ADD test.tar /test.tar
+RUN cat /test.tar/test/foo | grep Hi
+ADD test.tar /unlikely-to-exist
+RUN cat /unlikely-to-exist/test/foo | grep Hi
+ADD test.tar /unlikely-to-exist-trailing-slash/
+RUN cat /unlikely-to-exist-trailing-slash/test/foo | grep Hi
+RUN mkdir /existing-directory
+ADD test.tar /existing-directory
+RUN cat /existing-directory/test/foo | grep Hi
+ADD test.tar /existing-directory-trailing-slash/
+RUN cat /existing-directory-trailing-slash/test/foo | grep Hi`
+		tmpDir, err := ioutil.TempDir("", "fake-context")
+		testTar, err := os.Create(filepath.Join(tmpDir, "test.tar"))
+		if err != nil {
+			t.Fatalf("failed to create test.tar archive: %v", err)
 		}
-		if n > -2 {
-			t.Fatalf("Could not find contents of %s in build output", x)
+		defer testTar.Close()
+
+		tw := tar.NewWriter(testTar)
+
+		if err := tw.WriteHeader(&tar.Header{
+			Name: "test/foo",
+			Size: 2,
+		}); err != nil {
+			t.Fatalf("failed to write tar file header: %v", err)
 		}
+		if _, err := tw.Write([]byte("Hi")); err != nil {
+			t.Fatalf("failed to write tar file content: %v", err)
+		}
+		if err := tw.Close(); err != nil {
+			t.Fatalf("failed to close tar archive: %v", err)
+		}
+
+		if err := ioutil.WriteFile(filepath.Join(tmpDir, "Dockerfile"), []byte(dockerfile), 0644); err != nil {
+			t.Fatalf("failed to open destination dockerfile: %v", err)
+		}
+		return &FakeContext{Dir: tmpDir}
+	}()
+
+	if _, err := buildImageFromContext(name, ctx, true); err != nil {
+		t.Fatalf("build failed to complete for TestBuildAddTar: %v", err)
 	}
 
-	for _, n := range []string{"1", "2"} {
-		buildDirectory := filepath.Join(workingDirectory, "build_tests", "TestBuildAddTar", n)
-		buildCmd := exec.Command(dockerBinary, "build", "-t", name, ".")
-		buildCmd.Dir = buildDirectory
-		out, _, err := runCommandWithOutput(buildCmd)
-		errorOut(err, t, fmt.Sprintf("build failed to complete for TestBuildAddTar/%s: %v", n, err))
-		checkOutput(out)
-	}
 	logDone("build - ADD tar")
+}
+
+func TestBuildFromGIT(t *testing.T) {
+	name := "testbuildfromgit"
+	defer deleteImages(name)
+	git, err := fakeGIT("repo", map[string]string{
+		"Dockerfile": `FROM busybox
+					ADD first /first
+					RUN [ -f /first ]
+					MAINTAINER docker`,
+		"first": "test git data",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer git.Close()
+
+	_, err = buildImageFromPath(name, git.RepoURL, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := inspectField(name, "Author")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res != "docker" {
+		t.Fatal("Maintainer should be docker, got %s", res)
+	}
+	logDone("build - build from GIT")
 }
